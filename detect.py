@@ -5,6 +5,7 @@ from sys import platform
 from models import *  # set ONNX_EXPORT in models.py
 from utils.datasets import *
 from utils.utils import *
+import json
 
 
 def detect(save_txt=False, save_img=False, stream_img=False):
@@ -14,10 +15,11 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
     # Initialize
     device = torch_utils.select_device(force_cpu=ONNX_EXPORT)
+    '''
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
-
+    '''
     # Initialize model
     model = Darknet(opt.cfg, img_size)
 
@@ -47,11 +49,13 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
+
     if webcam:
         stream_img = True
         dataset = LoadWebcam(source, img_size=img_size, half=half)
     else:
-        save_img = True
+        save_img = False
+        save_txt = True
         dataset = LoadImages(source, img_size=img_size, half=half)
 
     # Get classes and colors
@@ -63,6 +67,7 @@ def detect(save_txt=False, save_img=False, stream_img=False):
     for path, img, im0, vid_cap in dataset:
         t = time.time()
         save_path = str(Path(out) / Path(path).name)
+        img_name = str(Path(path).name)
 
         # Get detections
         img = torch.from_numpy(img).unsqueeze(0).to(device)
@@ -71,6 +76,8 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
         s = '%gx%g ' % img.shape[2:]  # print string
         if det is not None and len(det):
+            with open(str(Path(out)) + '/result.txt', 'a') as file:
+                file.write(img_name + ' ')
             # Rescale boxes from img_size to im0 size
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
 
@@ -82,12 +89,19 @@ def detect(save_txt=False, save_img=False, stream_img=False):
             # Write results
             for *xyxy, conf, _, cls in det:
                 if save_txt:  # Write to file
-                    with open(save_path + '.txt', 'a') as file:
-                        file.write(('%g ' * 6 + '\n') % (*xyxy, cls, conf))
+                    with open('/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019_semifinal_3/info/clsname2id_all.json') as f:
+                        d = json.load(f)
+                    cls = classes[int(cls)]
+                    cls2id = d[str(cls)]
+                    with open(str(Path(out)) + '/result.txt', 'a') as file:
+                        file.write(('%g ' * 6) % (*xyxy, conf, float(cls2id)))
 
                 if save_img or stream_img:  # Add bbox to image
                     label = '%s %.2f' % (classes[int(cls)], conf)
                     plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+
+            with open(str(Path(out)) + '/result.txt', 'a') as file:
+                file.write('\n')
 
         print('%sDone. (%.3fs)' % (s, time.time() - t))
 
@@ -121,10 +135,10 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-spp.cfg', help='cfg file path')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3-spp.weights', help='path to weights file')
-    parser.add_argument('--source', type=str, default='data/samples', help='source')  # input file/folder, 0 for webcam
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='path to weights file')
+    parser.add_argument('--source', type=str, default='/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019_semifinal_3/ZJLAB_ZSD_2019_semifinal_testset/', help='source')  # input file/folder, 0 for webcam
     parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
