@@ -2,6 +2,7 @@ import torch.nn.functional as F
 
 from utils.parse_config import *
 from utils.utils import *
+import ast
 
 ONNX_EXPORT = False
 
@@ -71,6 +72,7 @@ def create_modules(module_defs, img_size, arc):
             mask = [int(x) for x in mdef['mask'].split(',')]  # anchor mask
             modules = YOLOLayer(anchors=mdef['anchors'][mask],  # anchor list
                                 nc=int(mdef['classes']),  # number of classes
+                                emb=int(mdef['emb']), # word embedding length
                                 img_size=img_size,  # (416, 416)
                                 yolo_index=yolo_index,  # 0, 1 or 2
                                 arc=arc)  # yolo architecture
@@ -120,12 +122,13 @@ class Swish(nn.Module):
 
 
 class YOLOLayer(nn.Module):
-    def __init__(self, anchors, nc, img_size, yolo_index, arc):
+    def __init__(self, anchors, nc, emb, img_size, yolo_index, arc):
         super(YOLOLayer, self).__init__()
 
         self.anchors = torch.Tensor(anchors)
         self.na = len(anchors)  # number of anchors (3)
         self.nc = nc  # number of classes (80)
+        self.emb = emb # 300
         self.nx = 0  # initialize number of x gridpoints
         self.ny = 0  # initialize number of y gridpoints
         self.arc = arc
@@ -144,8 +147,44 @@ class YOLOLayer(nn.Module):
             if (self.nx, self.ny) != (nx, ny):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
+        # get word embedding from p
+        we = p[:, :self.emb, :, :].permute(0, 2, 3, 1)
+        we = we.contiguous().view(-1, self.emb) # (bs * 13 * 13, 300)
+        # read embedding file
+        a = []
+        with open("data/coco.emb") as f:
+            for line in f:
+                l = ast.literal_eval(line)
+                a.append(l)
+
+        # tensor gpu version
+        # get corresponding class pro (bs * 13 * 13, 80)
+        pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().half())
+        pcls = torch.cat((pcls, pcls, pcls), 1)  # (bs * 13 * 13, 80 * 3)
+        pcls = pcls.contiguous().view(bs, self.ny, self.nx, self.nc * 3).permute(0, 3, 1, 2) # (bs,240,13,13)
+        pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx)  # (bs,3,80,13,13)
+        # get conf and xywh
+        temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx)  # (8, 3, 5, 13, 13)
+        # concate pcls and temp to (8,3,85,13,13)
+        p = torch.cat((pcls, temp), 2)
+        # permute to # (bs, anchors, grid, grid, classes + xywh)
+        p = p.permute(0, 1, 3, 4, 2)
+        '''
+        # numpy cpu version
+        # get corresponding class pro (bs * 13 * 13, 80)
+        pcls = np.dot(we.cpu().detach().numpy(), np.array(a).T)
+        pcls = np.concatenate((pcls, pcls, pcls), axis=1) # (bs * 13 * 13, 80 * 3)
+        pcls = torch.from_numpy(pcls).contiguous().view(bs, self.ny, self.nx, self.nc*3).permute(0, 3, 1, 2).cuda().half() # (bs,240,13,13)
+        pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx) # (bs,3,80,13,13)
+        # get conf and xywh
+        temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx) # (8, 3, 5, 13, 13)
+        # concate pcls and temp to (8,3,85,13,13)
+        p = torch.cat((pcls, temp), 2)
+        # permute to # (bs, anchors, grid, grid, classes + xywh)
+        p = p.permute(0, 1, 3, 4, 2)
+        '''
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
-        p = p.view(bs, self.na, self.nc + 5, self.ny, self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
+        # p = p.view(bs, self.na, self.nc + 5, self.ny, self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
             return p
@@ -321,6 +360,8 @@ def load_darknet_weights(self, weights, cutoff=-1):
 
     ptr = 0
     for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
+        if i==81 or i==93 or i==105:
+            continue
         if mdef['type'] == 'convolutional':
             conv_layer = module[0]
             if mdef['batch_normalize']:

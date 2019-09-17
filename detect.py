@@ -76,7 +76,7 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
         s = '%gx%g ' % img.shape[2:]  # print string
         if det is not None and len(det):
-            with open(str(Path(out)) + '/result.txt', 'a') as file:
+            with open(str(Path(out)) + '/result1.txt', 'a') as file:
                 file.write(img_name + ' ')
             # Rescale boxes from img_size to im0 size
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -89,18 +89,18 @@ def detect(save_txt=False, save_img=False, stream_img=False):
             # Write results
             for *xyxy, conf, _, cls in det:
                 if save_txt:  # Write to file
-                    with open('/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019_semifinal_3/info/clsname2id_all.json') as f:
+                    with open('data/clsname2id_all.json') as f:
                         d = json.load(f)
                     cls = classes[int(cls)]
                     cls2id = d[str(cls)]
-                    with open(str(Path(out)) + '/result.txt', 'a') as file:
+                    with open(str(Path(out)) + '/result1.txt', 'a') as file:
                         file.write(('%g ' * 6) % (*xyxy, conf, float(cls2id)))
 
                 if save_img or stream_img:  # Add bbox to image
                     label = '%s %.2f' % (classes[int(cls)], conf)
                     plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
 
-            with open(str(Path(out)) + '/result.txt', 'a') as file:
+            with open(str(Path(out)) + '/result1.txt', 'a') as file:
                 file.write('\n')
 
         print('%sDone. (%.3fs)' % (s, time.time() - t))
