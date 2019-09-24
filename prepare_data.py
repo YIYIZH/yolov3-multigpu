@@ -62,7 +62,7 @@ for path, subdirs, files in os.walk(r'/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019/image
      f = os.path.join(path, filename)
      a.write(str(f) + os.linesep)
      
-'''
+
 
 import ast
 a = []
@@ -71,3 +71,65 @@ with open("data/coco.emb") as f:
     for line in f:
         l = ast.literal_eval(line)
         a.append(l)
+        
+
+
+#########################
+with open("data/embeddings_GloVe.json") as js:
+    emb = json.load(js)
+
+with open("data/zsd_seen.names") as j:
+    names = j.read().split('\n')
+
+a= open('data/zsd_unseen.emb', 'w')
+with open('data/zsd_unseen.names', 'w') as f:
+    for k, v in emb.items():
+        if k not in names:
+            f.write(str(k) + '\n')
+            a.write(str(v) + '\n')
+
+import csv
+'''
+a= open('out23/cat23.txt', 'w')
+with open('out/onlyseenobj.txt', 'r') as f:
+    mm = 0
+    for line in f:
+        with open('out23/unseen23.txt', 'r') as j:
+            for ll in j:
+                fn = line.split(' ')
+                jn = ll.split(' ')
+                if fn[0] == jn[0]:
+                    mm = 1
+                    for z in range (len(fn)-1):
+                        a.write(str(fn[z]) + ' ')
+                    for k in range (len(jn)-1):
+                        if k == 0:
+                            a.write(str(jn[k + 1]))
+                        else:
+                            a.write(' ' + str(jn[k+1]))
+                    break
+        j.close()
+        if mm == 0:
+            a.write(line)
+        else:
+            mm = 0
+
+'''''
+b= open('out/temp.txt', 'w')
+with open('out/unseen.txt', 'r') as f:
+    mm = 0
+    for line in f:
+        with open('out/onlyseenobj.txt', 'r') as j:
+            for ll in j:
+                fn = line.split(' ')
+                jn = ll.split(' ')
+                if fn[0] == jn[0]:
+                    mm = 1
+                    break
+        if mm == 0:
+            b.write(line)
+        else:
+            mm = 0
+
+# cat cat.txt temp.txt > final_v1.txt
+'''''
