@@ -8,7 +8,7 @@ from utils.utils import *
 import json
 
 
-def detect(save_txt=False, save_img=False, stream_img=False):
+def detect(save_txt=False, save_img=True, stream_img=False):
     img_size = (320, 192) if ONNX_EXPORT else opt.img_size  # (320, 192) or (416, 256) or (608, 352) for (height, width)
     out, source, weights, half = opt.output, opt.source, opt.weights, opt.half
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http')
@@ -60,13 +60,14 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
     # Get classes and colors
     classes = load_classes(parse_data_cfg(opt.data)['names'])
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(classes))]
+    colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(140)]
 
     # Run inference
     t0 = time.time()
+    save_img = True
     for path, img, im0, vid_cap in dataset:
         t = time.time()
-        save_path = str(Path(out) / Path(path).name)
+        save_path = str(Path(out+ '/images') / Path(path).name)
         img_name = str(Path(path).name)
 
         # Get detections
@@ -76,7 +77,7 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
         s = '%gx%g ' % img.shape[2:]  # print string
         if det is not None and len(det):
-            with open(str(Path(out)) + '/result1.txt', 'a') as file:
+            with open(str(Path(out)) + opt.txt, 'a') as file:
                 file.write(img_name + ' ')
             # Rescale boxes from img_size to im0 size
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -93,14 +94,14 @@ def detect(save_txt=False, save_img=False, stream_img=False):
                         d = json.load(f)
                     cls = classes[int(cls)]
                     cls2id = d[str(cls)]
-                    with open(str(Path(out)) + '/result1.txt', 'a') as file:
+                    with open(str(Path(out)) + opt.txt, 'a') as file:
                         file.write(('%g ' * 6) % (*xyxy, conf, float(cls2id)))
 
                 if save_img or stream_img:  # Add bbox to image
-                    label = '%s %.2f' % (classes[int(cls)], conf)
-                    plot_one_box(xyxy, im0, label=label, color=colors[int(cls)])
+                    label = '%s %.2f' % (cls, conf)
+                    plot_one_box(xyxy, im0, label=label, color=colors[int(cls2id)])
 
-            with open(str(Path(out)) + '/result1.txt', 'a') as file:
+            with open(str(Path(out)) + opt.txt, 'a') as file:
                 file.write('\n')
 
         print('%sDone. (%.3fs)' % (s, time.time() - t))
@@ -135,16 +136,17 @@ def detect(save_txt=False, save_img=False, stream_img=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3.cfg', help='cfg file path')
-    parser.add_argument('--data', type=str, default='data/coco.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='path to weights file')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-zsd.cfg', help='cfg file path')
+    parser.add_argument('--data', type=str, default='data/zsd.data', help='coco.data file path')
+    parser.add_argument('--weights', type=str, default='output/ai03_31531/best.pt', help='path to weights file')
     parser.add_argument('--source', type=str, default='/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019_semifinal_3/ZJLAB_ZSD_2019_semifinal_testset/', help='source')  # input file/folder, 0 for webcam
-    parser.add_argument('--output', type=str, default='output', help='output folder')  # output folder
+    parser.add_argument('--output', type=str, default='out23-120', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
     parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
+    parser.add_argument('--txt', type=str, default='/unseen.txt', help='output txt name')
     opt = parser.parse_args()
     print(opt)
 
