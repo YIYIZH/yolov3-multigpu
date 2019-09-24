@@ -335,27 +335,29 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         # Compute losses
         nb = len(b)
         if nb:  # number of targets
-            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
-            tobj[b, a, gj, gi] = 1.0  # obj
+            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets (91,85)
+            tobj[b, a, gj, gi] = 1.0  # obj (32, 3, 13, 13)
             # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
 
             # GIoU
-            pxy = torch.sigmoid(ps[:, 0:2])  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy)
+            pxy = torch.sigmoid(ps[:, 0:2])  # pxy = pxy * s - (s - 1) / 2,  s = 1.5  (scale_xy) (91,2)
             pbox = torch.cat((pxy, torch.exp(ps[:, 2:4]) * anchor_vec[i]), 1)  # predicted box
-            giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False, GIoU=True)  # giou computation
+            giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False, GIoU=True)  # giou computation (91,4)
             lbox += (1.0 - giou).mean()  # giou loss
 
             if 'default' in arc and model.nc > 1:  # cls loss (only if multiple classes)
                 t = torch.zeros_like(ps[:, 5:])  # targets
                 t[range(nb), tcls[i]] = 1.0
-                lcls += BCEcls(ps[:, 5:], t)  # BCE
-                # lcls += CE(ps[:, 5:], tcls[i])  # CE
+                pcls = torch.sigmoid(ps[:, 5:])
+                # lcls += BCEcls(ps[:, 5:], t)  # BCE BCEWithLogitsLoss includes sigmoid
+                lcls += CE(pcls, tcls[i])  # CE
 
             # Append targets to text file
             # with open('targets.txt', 'a') as file:
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
         if 'default' in arc:  # seperate obj and cls
+            #pconf = torch.sigmoid(pi[..., 4])
             lobj += BCEobj(pi[..., 4], tobj)  # obj loss
 
         elif 'BCE' in arc:  # unified BCE (80 classes)
@@ -396,7 +398,7 @@ def build_targets(model, targets):
         if nt:
             iou = torch.stack([wh_iou(x, gwh) for x in anchor_vec], 0)
 
-            use_best_anchor = False
+            use_best_anchor = True
             if use_best_anchor:
                 iou, a = iou.max(0)  # best iou and anchor
             else:  # use all anchors
