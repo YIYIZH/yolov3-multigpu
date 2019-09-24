@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import argparse
 import time
 
@@ -9,6 +10,9 @@ import test  # import test.py to get mAP after each epoch
 from models import *
 from utils.datasets import *
 from utils.utils import *
+
+#import os
+#os.environ["CUDA_VISIBLE_DEVICE"] = "1"
 
 mixed_precision = True
 try:  # Mixed precision training https://github.com/NVIDIA/apex
@@ -50,9 +54,10 @@ def train():
 
     # Initialize
     init_seeds()
-    wdir = 'weights' + os.sep  # weights dir
+    wdir = 'output/ai10' + os.sep  # weights dir
     last = wdir + 'last.pt'
     best = wdir + 'best.pt'
+    #device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     device = torch_utils.select_device(apex=mixed_precision)
     multi_scale = opt.multi_scale
 
@@ -122,7 +127,7 @@ def train():
 
         for p in optimizer.param_groups:
             # lower param count allows more aggressive training settings: i.e. SGD ~0.1 lr0, ~0.9 momentum
-            p['lr'] *= 100
+            p['lr'] *= 1
             if p.get('momentum') is not None:  # for SGD but not Adam
                 p['momentum'] *= 0.9
 
@@ -134,6 +139,17 @@ def train():
             else:  # freeze layer
                 p.requires_grad = False
 
+    # Freeze backbone at epoch 0, unfreeze at epoch 1 (optional)
+    freeze_backbone = True
+    if freeze_backbone:
+        for name, p in model.named_parameters():
+            if int(name.split('.')[1]) < cutoff:  # if layer < 50
+                p.requires_grad = False
+        for p in optimizer.param_groups:
+            # lower param count allows more aggressive training settings: i.e. SGD ~0.1 lr0, ~0.9 momentum
+            p['lr'] *= 1
+            if p.get('momentum') is not None:  # for SGD but not Adam
+                p['momentum'] *= 0.9
     # Scheduler https://github.com/ultralytics/yolov3/issues/238
     # lf = lambda x: 1 - x / epochs  # linear ramp to zero
     # lf = lambda x: 10 ** (hyp['lrf'] * x / epochs)  # exp ramp
@@ -157,14 +173,16 @@ def train():
     if mixed_precision:
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1', verbosity=0)
 
+
     # Initialize distributed training
     if torch.cuda.device_count() > 1:
         dist.init_process_group(backend='nccl',  # 'distributed backend'
-                                init_method='tcp://127.0.0.1:9999',  # distributed training init method
+                                init_method='tcp://127.0.0.1:9998',  # distributed training init method
                                 world_size=1,  # number of nodes for distributed training
                                 rank=0)  # distributed training node rank
-        model = torch.nn.parallel.DistributedDataParallel(model)
+        model = torch.nn.parallel.DistributedDataParallel(model,device_ids=[0])
         model.yolo_layers = model.module.yolo_layers  # move yolo layer indices to top level
+
 
     # Dataset
     dataset = LoadImagesAndLabels(train_path,
@@ -209,15 +227,10 @@ def train():
 
         # Freeze backbone at epoch 0, unfreeze at epoch 1 (optional)
         freeze_backbone = False
-        if freeze_backbone and epoch < 1:
+        if freeze_backbone:
             for name, p in model.named_parameters():
-                nf = int(model.module.module_defs[model.yolo_layers[0] - 1]['filters'])
-                if p.shape[0] != nf:
-                    p.requires_grad = False
-                else:
-                    break
-                #if int(name.split('.')[2]) < cutoff:  # if layer < 75
-                    #p.requires_grad = False if epoch == 0 else True
+                if int(name.split('.')[2]) < cutoff:  # if layer < 50
+                    p.requires_grad = False if epoch < 100 else True
 
         # Update image weights (optional)
         if dataset.image_weights:
@@ -381,7 +394,7 @@ if __name__ == '__main__':
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--img-weights', action='store_true', help='select training images by weight')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='', help='initial weights')  # i.e. weights/darknet.53.conv.74
+    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='initial weights')  # i.e. output/ai03_30132/best.pt
     parser.add_argument('--arc', type=str, default='defaultpw', help='yolo architecture')  # defaultpw, uCE, uBCE
     parser.add_argument('--prebias', action='store_true', help='transfer-learn yolo biases prior to training')
     parser.add_argument('--var', type=float, help='debug variable')
