@@ -147,46 +147,46 @@ class YOLOLayer(nn.Module):
             if (self.nx, self.ny) != (nx, ny):
                 create_grids(self, img_size, (nx, ny), p.device, p.dtype)
 
-        # get word embedding from p
-        we = p[:, :self.emb, :, :].permute(0, 2, 3, 1)
-        we = we.contiguous().view(-1, self.emb) # (bs * 13 * 13, 300)
-        # read embedding file
-        a = []
-        with open("data/coco.emb") as f:
-            for line in f:
-                l = ast.literal_eval(line)
-                a.append(l)
-
-        # tensor gpu version
-        # get corresponding class pro (bs * 13 * 13, 80)
-        pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().half())
-        pcls = torch.cat((pcls, pcls, pcls), 1)  # (bs * 13 * 13, 80 * 3)
-        pcls = pcls.contiguous().view(bs, self.ny, self.nx, self.nc * 3).permute(0, 3, 1, 2) # (bs,240,13,13)
-        pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx)  # (bs,3,80,13,13)
-        # get conf and xywh
-        temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx)  # (8, 3, 5, 13, 13)
-        # concate pcls and temp to (8,3,85,13,13)
-        p = torch.cat((pcls, temp), 2)
-        # permute to # (bs, anchors, grid, grid, classes + xywh)
-        p = p.permute(0, 1, 3, 4, 2)
-        '''
-        # numpy cpu version
-        # get corresponding class pro (bs * 13 * 13, 80)
-        pcls = np.dot(we.cpu().detach().numpy(), np.array(a).T)
-        pcls = np.concatenate((pcls, pcls, pcls), axis=1) # (bs * 13 * 13, 80 * 3)
-        pcls = torch.from_numpy(pcls).contiguous().view(bs, self.ny, self.nx, self.nc*3).permute(0, 3, 1, 2).cuda().half() # (bs,240,13,13)
-        pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx) # (bs,3,80,13,13)
-        # get conf and xywh
-        temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx) # (8, 3, 5, 13, 13)
-        # concate pcls and temp to (8,3,85,13,13)
-        p = torch.cat((pcls, temp), 2)
-        # permute to # (bs, anchors, grid, grid, classes + xywh)
-        p = p.permute(0, 1, 3, 4, 2)
-        '''
         # p.view(bs, 255, 13, 13) -- > (bs, 3, 13, 13, 85)  # (bs, anchors, grid, grid, classes + xywh)
         # p = p.view(bs, self.na, self.nc + 5, self.ny, self.nx).permute(0, 1, 3, 4, 2).contiguous()  # prediction
 
         if self.training:
+            # get word embedding from p
+            we = p[:, :self.emb, :, :].permute(0, 2, 3, 1)
+            we = we.contiguous().view(-1, self.emb)  # (bs * 13 * 13, 300)
+            # read embedding file
+            a = []
+            with open("data/coco.emb") as f:
+                for line in f:
+                    l = ast.literal_eval(line)
+                    a.append(l)
+
+            # tensor gpu version
+            # get corresponding class pro (bs * 13 * 13, 80)
+            pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().half())
+            pcls = torch.cat((pcls, pcls, pcls), 1)  # (bs * 13 * 13, 80 * 3)
+            pcls = pcls.contiguous().view(bs, self.ny, self.nx, self.nc * 3).permute(0, 3, 1, 2)  # (bs,240,13,13)
+            pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx)  # (bs,3,80,13,13)
+            # get conf and xywh
+            temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx)  # (8, 3, 5, 13, 13)
+            # concate pcls and temp to (8,3,85,13,13)
+            p = torch.cat((temp, pcls), 2)
+            # permute to # (bs, anchors, grid, grid, xywh + classes)
+            p = p.permute(0, 1, 3, 4, 2)
+            '''
+            # numpy cpu version
+            # get corresponding class pro (bs * 13 * 13, 80)
+            pcls = np.dot(we.cpu().detach().numpy(), np.array(a).T)
+            pcls = np.concatenate((pcls, pcls, pcls), axis=1) # (bs * 13 * 13, 80 * 3)
+            pcls = torch.from_numpy(pcls).contiguous().view(bs, self.ny, self.nx, self.nc*3).permute(0, 3, 1, 2).cuda().half() # (bs,240,13,13)
+            pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx) # (bs,3,80,13,13)
+            # get conf and xywh
+            temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx) # (8, 3, 5, 13, 13)
+            # concate pcls and temp to (8,3,85,13,13)
+            p = torch.cat((pcls, temp), 2)
+            # permute to # (bs, anchors, grid, grid, classes + xywh)
+            p = p.permute(0, 1, 3, 4, 2)
+            '''
             return p
 
         elif ONNX_EXPORT:
@@ -214,8 +214,32 @@ class YOLOLayer(nn.Module):
             # p_cls = p_cls.permute(2, 1, 0)
             # return torch.cat((xy / ngu, wh, p_conf, p_cls), 2).squeeze().t()
 
-        else:  # inference
+        else:  # inference detect
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
+            # get word embedding from p
+            #self.nc = 120
+            we = p[:, :self.emb, :, :].permute(0, 2, 3, 1)
+            we = we.contiguous().view(-1, self.emb)  # (bs * 13 * 13, 300)
+            # read embedding file
+            a = []
+            with open("data/coco.emb") as f:
+                for line in f:
+                    l = ast.literal_eval(line)
+                    a.append(l)
+
+            # tensor gpu version
+            # get corresponding class pro (bs * 13 * 13, 120)
+            pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().float())
+            pcls = torch.cat((pcls, pcls, pcls), 1)  # (bs * 13 * 13, 120 * 3)
+            pcls = pcls.contiguous().view(bs, self.ny, self.nx, self.nc * 3).permute(0, 3, 1, 2)  # (bs,360,13,13)
+            pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx)  # (bs,3,120,13,13)
+            # get conf and xywh
+            temp = p[:, self.emb:, :, :].contiguous().view(bs, self.na, 5, self.ny, self.nx)  # (8, 3, 5, 13, 13)
+            # concate pcls and temp to (8,3,125,13,13)
+            p = torch.cat((temp, pcls), 2)
+            # permute to # (bs, anchors, grid, grid, xywh + classes)
+            p = p.permute(0, 1, 3, 4, 2)
+
             io = p.clone()  # inference output
             io[..., 0:2] = torch.sigmoid(io[..., 0:2]) + self.grid_xy  # xy
             io[..., 2:4] = torch.exp(io[..., 2:4]) * self.anchor_wh  # wh yolo method
@@ -350,6 +374,8 @@ def load_darknet_weights(self, weights, cutoff=-1):
     elif file == 'yolov3-tiny.conv.15':
         cutoff = 15
 
+    cutoff = 81
+
     # Read weights file
     with open(weights, 'rb') as f:
         # Read Header https://github.com/AlexeyAB/darknet/issues/2914#issuecomment-496675346
@@ -360,8 +386,14 @@ def load_darknet_weights(self, weights, cutoff=-1):
 
     ptr = 0
     for i, (mdef, module) in enumerate(zip(self.module_defs[:cutoff], self.module_list[:cutoff])):
-        if i==81 or i==93 or i==105:
-            continue
+        # for transfer learning
+        #if i==81 or i==93 or i==105:
+            #continue
+        '''
+        # for freeze only
+        if i==cutoff:
+            break
+        '''
         if mdef['type'] == 'convolutional':
             conv_layer = module[0]
             if mdef['batch_normalize']:
