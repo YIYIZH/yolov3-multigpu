@@ -2,5 +2,3 @@ classes=80
 train=/dlwsdata2/public/coco/trainvalno5k.txt
 valid=/dlwsdata2/public/coco/5k.txt
 names=data/coco.names
-backup=backup/
-eval=coco
