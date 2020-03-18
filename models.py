@@ -156,7 +156,7 @@ class YOLOLayer(nn.Module):
             we = we.contiguous().view(-1, self.emb)  # (bs * 13 * 13, 300)
             # read embedding file
             a = []
-            with open("data/coco.emb") as f:
+            with open("data/coco.vs") as f:
                 for line in f:
                     l = ast.literal_eval(line)
                     a.append(l)
@@ -217,19 +217,19 @@ class YOLOLayer(nn.Module):
         else:  # inference detect
             # s = 1.5  # scale_xy  (pxy = pxy * s - (s - 1) / 2)
             # get word embedding from p
-            #self.nc = 120
+            self.nc = 40
             we = p[:, :self.emb, :, :].permute(0, 2, 3, 1)
             we = we.contiguous().view(-1, self.emb)  # (bs * 13 * 13, 300)
             # read embedding file
             a = []
-            with open("data/coco.emb") as f:
+            with open("data/zsd_unseen.vs") as f: # coco.emb for train, zsd_unseen.emb for detect
                 for line in f:
                     l = ast.literal_eval(line)
                     a.append(l)
 
             # tensor gpu version
             # get corresponding class pro (bs * 13 * 13, 120)
-            pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().float())
+            pcls = torch.mm(we, torch.from_numpy(np.array(a).T).cuda().float()) #.cuda()
             pcls = torch.cat((pcls, pcls, pcls), 1)  # (bs * 13 * 13, 120 * 3)
             pcls = pcls.contiguous().view(bs, self.ny, self.nx, self.nc * 3).permute(0, 3, 1, 2)  # (bs,360,13,13)
             pcls = pcls.contiguous().view(bs, self.na, self.nc, self.ny, self.nx)  # (bs,3,120,13,13)

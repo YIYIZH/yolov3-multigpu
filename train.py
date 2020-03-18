@@ -29,7 +29,7 @@ hyp = {'giou': 1.582,  # giou loss gain
        'iou_t': 0.2635,  # iou training threshold
        'lr0': 0.002324,  # initial learning rate (SGD=1E-3, Adam=9E-5)
        'lrf': -4.,  # final LambdaLR learning rate = lr0 * (10 ** lrf)
-       'momentum': 0.97,  # SGD momentum
+       'momentum': 0.,  # 0.97,  # SGD momentum
        'weight_decay': 0.0004569,  # optimizer weight decay
        'hsv_s': 0.5703,  # image HSV-Saturation augmentation (fraction)
        'hsv_v': 0.3174,  # image HSV-Value augmentation (fraction)
@@ -54,7 +54,7 @@ def train():
 
     # Initialize
     init_seeds()
-    wdir = 'output/ai10' + os.sep  # weights dir
+    wdir = 'output/ai10_29' + os.sep  # weights dir
     last = wdir + 'last.pt'
     best = wdir + 'best.pt'
     #device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
@@ -85,7 +85,7 @@ def train():
 
     # optimizer = optim.Adam(pg0, lr=hyp['lr0'])
     # optimizer = AdaBound(pg0, lr=hyp['lr0'], final_lr=0.1)
-    optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=True)
+    optimizer = optim.SGD(pg0, lr=hyp['lr0'], momentum=hyp['momentum'], nesterov=False)
     optimizer.add_param_group({'params': pg1, 'weight_decay': hyp['weight_decay']})  # add pg1 with weight_decay
     del pg0, pg1
 
@@ -139,11 +139,23 @@ def train():
             else:  # freeze layer
                 p.requires_grad = False
 
+
+    # test start: to solve unmatched size of momentum
+    for p in optimizer.param_groups:
+        # lower param count allows more aggressive training settings: i.e. SGD ~0.1 lr0, ~0.9 momentum
+        p['lr'] *= 0.95
+        if p.get('momentum') is not None:  # for SGD but not Adam
+            p['momentum'] *= 0
+    for p in model.parameters():
+        p.requires_grad = True
+    # test over
+
+
     # Freeze backbone at epoch 0, unfreeze at epoch 1 (optional)
-    freeze_backbone = True
+    freeze_backbone = False
     if freeze_backbone:
         for name, p in model.named_parameters():
-            if int(name.split('.')[1]) < cutoff:  # if layer < 50
+            if int(name.split('.')[1]) < cutoff:  # if layer < 81
                 p.requires_grad = False
         for p in optimizer.param_groups:
             # lower param count allows more aggressive training settings: i.e. SGD ~0.1 lr0, ~0.9 momentum
@@ -180,7 +192,7 @@ def train():
                                 init_method='tcp://127.0.0.1:9998',  # distributed training init method
                                 world_size=1,  # number of nodes for distributed training
                                 rank=0)  # distributed training node rank
-        model = torch.nn.parallel.DistributedDataParallel(model,device_ids=[0])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[0])
         model.yolo_layers = model.module.yolo_layers  # move yolo layer indices to top level
 
 
@@ -254,12 +266,14 @@ def train():
                     ns = [math.ceil(x * sf / 32.) * 32 for x in imgs.shape[2:]]  # new shape (stretched to 32-multiple)
                     imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
+            '''
             # Plot images with bounding boxes
             if ni == 0:
                 fname = 'train_batch%g.jpg' % i
                 plot_images(imgs=imgs, targets=targets, paths=paths, fname=fname)
                 if tb_writer:
                     tb_writer.add_image(fname, cv2.imread(fname)[:, :, ::-1], dataformats='HWC')
+            '''
 
             # Hyperparameter burn-in
             # n_burn = nb - 1  # min(nb // 5 + 1, 1000)  # number of burn-in batches
@@ -380,8 +394,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--epochs', type=int, default=273)  # 500200 batches at bs 16, 117263 images = 273 epochs
     parser.add_argument('--batch-size', type=int, default=32)  # effective bs = batch_size * accumulate = 16 * 4 = 64
-    parser.add_argument('--accumulate', type=int, default=2, help='batches to accumulate before optimizing')
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-zsd.cfg', help='cfg file path')
+    parser.add_argument('--accumulate', type=int, default=1, help='batches to accumulate before optimizing')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-zsd-vs.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/coco.data', help='*.data file path')
     parser.add_argument('--multi-scale', action='store_true', help='adjust (67% - 150%) img_size every 10 batches')
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
@@ -394,12 +408,12 @@ if __name__ == '__main__':
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--img-weights', action='store_true', help='select training images by weight')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', type=str, default='weights/yolov3.weights', help='initial weights')  # i.e. output/ai03_30132/best.pt
+    parser.add_argument('--weights', type=str, default='output/ai03_31531_27/best.pt', help='initial weights')  # i.e. weights/yolov3.weights
     parser.add_argument('--arc', type=str, default='defaultpw', help='yolo architecture')  # defaultpw, uCE, uBCE
     parser.add_argument('--prebias', action='store_true', help='transfer-learn yolo biases prior to training')
     parser.add_argument('--var', type=float, help='debug variable')
     opt = parser.parse_args()
-    opt.weights = 'weights/last.pt' if opt.resume else opt.weights
+    opt.weights = 'weights/last.pt' if opt.resume else opt.weights #output/ai03_30132/best.pt
     print(opt)
 
     tb_writer = None

@@ -14,7 +14,8 @@ def detect(save_txt=False, save_img=True, stream_img=False):
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http')
 
     # Initialize
-    device = torch_utils.select_device(force_cpu=ONNX_EXPORT)
+    device = torch_utils.select_device(force_cpu=False)
+    #device = torch.device("cuda:0")
     '''
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
@@ -59,7 +60,7 @@ def detect(save_txt=False, save_img=True, stream_img=False):
         dataset = LoadImages(source, img_size=img_size, half=half)
 
     # Get classes and colors
-    classes = load_classes(parse_data_cfg(opt.data)['names'])
+    classes = load_classes('data/zsd_unseen.names') # change model detect as well
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(140)]
 
     # Run inference
@@ -136,14 +137,14 @@ def detect(save_txt=False, save_img=True, stream_img=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='cfg/yolov3-zsd.cfg', help='cfg file path')
+    parser.add_argument('--cfg', type=str, default='cfg/yolov3-zsd-vs.cfg', help='cfg file path')
     parser.add_argument('--data', type=str, default='data/zsd.data', help='coco.data file path')
-    parser.add_argument('--weights', type=str, default='output/ai03_31531/best.pt', help='path to weights file')
+    parser.add_argument('--weights', type=str, default='output/ai03_31531_27/best.pt', help='path to weights file')
     parser.add_argument('--source', type=str, default='/dlwsdata3/public/ZSD/ZJLAB_ZSD_2019_semifinal_3/ZJLAB_ZSD_2019_semifinal_testset/', help='source')  # input file/folder, 0 for webcam
-    parser.add_argument('--output', type=str, default='out23-120', help='output folder')  # output folder
+    parser.add_argument('--output', type=str, default='out29', help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.3, help='object confidence threshold')
-    parser.add_argument('--nms-thres', type=float, default=0.5, help='iou threshold for non-maximum suppression')
+    parser.add_argument('--conf-thres', type=float, default=0.45, help='object confidence threshold')
+    parser.add_argument('--nms-thres', type=float, default=0.3, help='iou threshold for non-maximum suppression')
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--half', action='store_true', help='half precision FP16 inference')
     parser.add_argument('--txt', type=str, default='/unseen.txt', help='output txt name')
