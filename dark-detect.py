@@ -63,18 +63,17 @@ def detect():
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             p, s, im0 = path, '', im0s
-
             s += '%gx%g ' % img.shape[2:]  # print string
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
                 det_cpu = det.detach().cpu().numpy().copy()
+                # map coco class id to ours
                 for i in range(det_cpu.shape[0]):
                     if det_cpu[i,-1] == 5:
                         det_cpu[i,-1] = 4
                     if det_cpu[i,-1] == 7:
                         det_cpu[i,-1] = 5
-
-                return det_cpu
+        return det_cpu
 
 detect()
